@@ -88,7 +88,12 @@ def search_transcript(video_id, keyword):
                 'text': entry.text
             })
     return hits
-
+    
+@app.route('/')
+def index():
+    from flask import send_from_directory
+    return send_from_directory('.', 'index.html')
+    
 @app.route('/search', methods=['GET'])
 def search():
     channel_url = request.args.get('channel', '').strip()

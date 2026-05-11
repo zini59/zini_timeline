@@ -225,7 +225,6 @@ const API_BASE = 'https://zinitimeline-production.up.railway.app';
 async function doSearch() {
   const channel = document.getElementById('channelInput').value.trim();
   const keyword = document.getElementById('keywordInput').value.trim();
-  const status  = document.getElementById('status');
   const btn     = document.getElementById('searchBtn');
 
   if (!channel || !keyword) {
@@ -233,29 +232,24 @@ async function doSearch() {
   }
 
   btn.disabled = true;
-  setStatus('🧞‍♀️ 지니가 영상을 분석하고 있어요...', 'loading');
-  showProgress(true, '채널 영상 목록을 불러오는 중...', 10);
+  setStatus('🧞‍♀️ 분석 중...', 'loading');
   document.getElementById('results').innerHTML = '';
   document.getElementById('summary').classList.remove('show');
 
   try {
-    showProgress(true, '자막에서 키워드를 검색하는 중... (시간이 걸릴 수 있어요)', 40);
-    const res  = await fetch(`${API_BASE}/search?channel=${encodeURIComponent(channel)}&keyword=${encodeURIComponent(keyword)}`);
-    const data = await res.json();
-    showProgress(true, '결과를 정리하는 중...', 90);
-
-    if (data.error) { setStatus('❌ ' + data.error, 'err'); showProgress(false); btn.disabled = false; return; }
-
-    setTimeout(() => {
-      showProgress(false);
-      renderResults(data, keyword);
-      btn.disabled = false;
-    }, 400);
-
+    const url = `${API_BASE}/search?channel=${encodeURIComponent(channel)}&keyword=${encodeURIComponent(keyword)}`;
+    console.log('요청 URL:', url);
+    const res  = await fetch(url);
+    const text = await res.text();
+    console.log('응답 raw:', text);
+    const data = JSON.parse(text);
+    console.log('파싱 결과:', data);
+    renderResults(data, keyword);
   } catch(e) {
-    setStatus('❌ 서버 연결에 실패했어요. 잠시 후 다시 시도해주세요.', 'err');
-    showProgress(false); btn.disabled = false;
+    console.error('에러:', e);
+    setStatus('❌ 오류: ' + e.message, 'err');
   }
+  btn.disabled = false;
 }
 
 function renderResults(data, keyword) {

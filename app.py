@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 import re
 
 app = Flask(__name__)
@@ -31,7 +32,7 @@ def resolve_channel_id(value, kind, api_key):
         return res['items'][0]['snippet']['channelId']
     return None
 
-def get_videos(channel_id, api_key, max_videos=50):
+def get_videos(channel_id, api_key, max_videos=30):
     yt = build('youtube', 'v3', developerKey=api_key)
     ch = yt.channels().list(part='contentDetails', id=channel_id).execute()
     if not ch.get('items'):
@@ -88,12 +89,12 @@ def search_transcript(video_id, keyword):
                 'text': entry.text
             })
     return hits
-    
+
 @app.route('/')
 def index():
     from flask import send_from_directory
     return send_from_directory('.', 'index.html')
-    
+
 @app.route('/search', methods=['GET'])
 def search():
     channel_url = request.args.get('channel', '').strip()
@@ -106,21 +107,36 @@ def search():
     channel_id = resolve_channel_id(value, kind, YOUTUBE_API_KEY)
     if not channel_id:
         return jsonify({'error': '채널을 찾을 수 없어요.'}), 404
-    videos = get_videos(channel_id, YOUTUBE_API_KEY)
+    videos = get_videos(channel_id, YOUTUBE_API_KEY, max_videos=30)
     if not videos:
         return jsonify({'error': '영상 목록을 불러올 수 없어요.'}), 404
+
     results = []
-    for v in videos:
+    def process(v):
         hits = search_transcript(v['id'], keyword)
         if hits:
-            results.append({
+            return {
                 'videoId': v['id'],
                 'title': v['title'],
                 'thumbnail': v['thumbnail'],
                 'published': v['published'],
                 'hitCount': len(hits),
                 'timeline': hits
-            })
+            }
+        return None
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(process, v): v for v in videos}
+        for future in as_completed(futures, timeout=25):
+            try:
+                result = future.result(timeout=5)
+                if result:
+                    results.append(result)
+            except Exception:
+                pass
+
+    results.sort(key=lambda x: x['published'], reverse=True)
+
     return jsonify({
         'keyword': keyword,
         'totalVideos': len(videos),

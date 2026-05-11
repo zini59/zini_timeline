@@ -74,7 +74,8 @@ def search_transcript(video_id, keyword):
                 codes = [t.language_code for t in tlist]
                 transcript = tlist.find_transcript(codes)
         data = transcript.fetch()
-    except:
+except Exception as e:
+        print(f"자막 오류 {video_id}: {e}")
         return []
     kw = keyword.lower()
     hits = []

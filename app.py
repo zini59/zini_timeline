@@ -4,7 +4,7 @@ from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 import re
 
-app = Flask(__name__, static_folder='/home/10wol', static_url_path='')
+app = Flask(__name__)
 CORS(app)
 
 YOUTUBE_API_KEY = "AIzaSyA9OCTxbBsv4qP1wmUkbCsi8YB1gfzmBcg"
@@ -59,37 +59,19 @@ def get_videos(channel_id, api_key, max_videos=50):
 
 def search_transcript(video_id, keyword):
     try:
-        tlist = YouTubeTranscriptApi.list_transcripts(video_id)
+        api = YouTubeTranscriptApi()
+        transcript_list = api.list(video_id)
         transcript = None
-        for lang in ['ko', 'ko-KR']:
-            try:
-                transcript = tlist.find_transcript([lang])
+        for t in transcript_list:
+            if t.language_code in ['ko', 'ko-KR']:
+                transcript = t
                 break
-            except:
-                pass
         if not transcript:
-            try:
-                transcript = tlist.find_generated_transcript(['ko', 'ko-KR', 'en'])
-            except:
-                codes = [t.language_code for t in tlist]
-                transcript = tlist.find_transcript(codes)
-        data = transcript.fetch()
-def search_transcript(video_id, keyword):
-    try:
-        tlist = YouTubeTranscriptApi.list_transcripts(video_id)
-        transcript = None
-        for lang in ['ko', 'ko-KR']:
-            try:
-                transcript = tlist.find_transcript([lang])
+            for t in transcript_list:
+                transcript = t
                 break
-            except Exception:
-                pass
         if not transcript:
-            try:
-                transcript = tlist.find_generated_transcript(['ko', 'ko-KR', 'en'])
-            except Exception:
-                codes = [t.language_code for t in tlist]
-                transcript = tlist.find_transcript(codes)
+            return []
         data = transcript.fetch()
     except Exception as e:
         print(f"자막 오류 {video_id}: {e}")
@@ -97,31 +79,15 @@ def search_transcript(video_id, keyword):
     kw = keyword.lower()
     hits = []
     for entry in data:
-        if kw in entry['text'].lower():
-            s = int(entry['start'])
+        if kw in entry.text.lower():
+            s = int(entry.start)
             h, m, sec = s // 3600, (s % 3600) // 60, s % 60
             hits.append({
                 'time': s,
                 'timeStr': f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}",
-                'text': entry['text']
+                'text': entry.text
             })
     return hits
-    kw = keyword.lower()
-    hits = []
-    for entry in data:
-        if kw in entry['text'].lower():
-            s = int(entry['start'])
-            h, m, sec = s // 3600, (s % 3600) // 60, s % 60
-            hits.append({
-                'time': s,
-                'timeStr': f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}",
-                'text': entry['text']
-            })
-    return hits
-
-@app.route('/')
-def index():
-    return app.send_static_file('index.html')
 
 @app.route('/search', methods=['GET'])
 def search():

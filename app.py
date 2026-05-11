@@ -58,10 +58,9 @@ def get_videos(channel_id, api_key):
     return videos
 
 def get_text(entry):
-    # 버전에 따라 entry가 dict이거나 object일 수 있음
     if isinstance(entry, dict):
         return entry.get('text', '')
-    return getattr(entry, 'text', '')
+    return getattr(entry, 'text', str(entry))
 
 def get_start(entry):
     if isinstance(entry, dict):
@@ -70,15 +69,12 @@ def get_start(entry):
 
 def search_transcript(video_id, keyword):
     try:
-        api = YouTubeTranscriptApi()
-        transcript_list = api.list(video_id)
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         transcript = None
-        # 한국어 우선
         for t in transcript_list:
             if t.language_code in ['ko', 'ko-KR']:
                 transcript = t
                 break
-        # 없으면 아무 언어나
         if not transcript:
             for t in transcript_list:
                 transcript = t

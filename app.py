@@ -1,8 +1,8 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 
 app = Flask(__name__)
@@ -32,18 +32,17 @@ def resolve_channel_id(value, kind, api_key):
         return res['items'][0]['snippet']['channelId']
     return None
 
-def get_videos(channel_id, api_key, max_videos=30):
+def get_videos(channel_id, api_key):
     yt = build('youtube', 'v3', developerKey=api_key)
     ch = yt.channels().list(part='contentDetails', id=channel_id).execute()
     if not ch.get('items'):
         return []
     uploads_id = ch['items'][0]['contentDetails']['relatedPlaylists']['uploads']
     videos, next_page = [], None
-    while len(videos) < max_videos:
+    while True:
         pl = yt.playlistItems().list(
             part='snippet', playlistId=uploads_id,
-            maxResults=min(50, max_videos - len(videos)),
-            pageToken=next_page
+            maxResults=50, pageToken=next_page
         ).execute()
         for item in pl['items']:
             sn = item['snippet']
@@ -58,15 +57,28 @@ def get_videos(channel_id, api_key, max_videos=30):
             break
     return videos
 
+def get_text(entry):
+    # 버전에 따라 entry가 dict이거나 object일 수 있음
+    if isinstance(entry, dict):
+        return entry.get('text', '')
+    return getattr(entry, 'text', '')
+
+def get_start(entry):
+    if isinstance(entry, dict):
+        return entry.get('start', 0)
+    return getattr(entry, 'start', 0)
+
 def search_transcript(video_id, keyword):
     try:
         api = YouTubeTranscriptApi()
         transcript_list = api.list(video_id)
         transcript = None
+        # 한국어 우선
         for t in transcript_list:
             if t.language_code in ['ko', 'ko-KR']:
                 transcript = t
                 break
+        # 없으면 아무 언어나
         if not transcript:
             for t in transcript_list:
                 transcript = t
@@ -77,22 +89,23 @@ def search_transcript(video_id, keyword):
     except Exception as e:
         print(f"자막 오류 {video_id}: {e}")
         return []
+
     kw = keyword.lower()
     hits = []
     for entry in data:
-        if kw in entry.text.lower():
-            s = int(entry.start)
+        text = get_text(entry)
+        if kw in text.lower():
+            s = int(get_start(entry))
             h, m, sec = s // 3600, (s % 3600) // 60, s % 60
             hits.append({
                 'time': s,
                 'timeStr': f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}",
-                'text': entry.text
+                'text': text
             })
     return hits
 
 @app.route('/')
 def index():
-    from flask import send_from_directory
     return send_from_directory('.', 'index.html')
 
 @app.route('/search', methods=['GET'])
@@ -107,11 +120,12 @@ def search():
     channel_id = resolve_channel_id(value, kind, YOUTUBE_API_KEY)
     if not channel_id:
         return jsonify({'error': '채널을 찾을 수 없어요.'}), 404
-    videos = get_videos(channel_id, YOUTUBE_API_KEY, max_videos=30)
+    videos = get_videos(channel_id, YOUTUBE_API_KEY)
     if not videos:
         return jsonify({'error': '영상 목록을 불러올 수 없어요.'}), 404
 
     results = []
+
     def process(v):
         hits = search_transcript(v['id'], keyword)
         if hits:
@@ -125,11 +139,11 @@ def search():
             }
         return None
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(process, v): v for v in videos}
-        for future in as_completed(futures, timeout=25):
+        for future in as_completed(futures, timeout=55):
             try:
-                result = future.result(timeout=5)
+                result = future.result(timeout=8)
                 if result:
                     results.append(result)
             except Exception:

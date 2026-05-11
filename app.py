@@ -74,9 +74,38 @@ def search_transcript(video_id, keyword):
                 codes = [t.language_code for t in tlist]
                 transcript = tlist.find_transcript(codes)
         data = transcript.fetch()
-except Exception as e:
+def search_transcript(video_id, keyword):
+    try:
+        tlist = YouTubeTranscriptApi.list_transcripts(video_id)
+        transcript = None
+        for lang in ['ko', 'ko-KR']:
+            try:
+                transcript = tlist.find_transcript([lang])
+                break
+            except Exception:
+                pass
+        if not transcript:
+            try:
+                transcript = tlist.find_generated_transcript(['ko', 'ko-KR', 'en'])
+            except Exception:
+                codes = [t.language_code for t in tlist]
+                transcript = tlist.find_transcript(codes)
+        data = transcript.fetch()
+    except Exception as e:
         print(f"자막 오류 {video_id}: {e}")
         return []
+    kw = keyword.lower()
+    hits = []
+    for entry in data:
+        if kw in entry['text'].lower():
+            s = int(entry['start'])
+            h, m, sec = s // 3600, (s % 3600) // 60, s % 60
+            hits.append({
+                'time': s,
+                'timeStr': f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}",
+                'text': entry['text']
+            })
+    return hits
     kw = keyword.lower()
     hits = []
     for entry in data:
